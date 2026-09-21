@@ -1,0 +1,9 @@
+---
+zabbix_version_major: "7.0"
+zabbix_agent_port: 10050
+
+zabbix_server: "127.0.0.1"
+zabbix_server_active: "127.0.0.1"
+zabbix_allowed_source: "127.0.0.1"
+
+zabbix_manage_ufw: true

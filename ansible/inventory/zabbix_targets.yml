@@ -1,0 +1,16 @@
+---
+all:
+  children:
+    zabbix_targets:
+      hosts:
+        ubuntu-01:
+          ansible_host: 192.0.0.162
+          ansible_user: sysadmin
+          ansible_python_interpreter: /usr/bin/python3
+          ansible_ssh_private_key_file: ~/.ssh/proxmox_template_ansible
+
+        ubuntu-02:
+          ansible_host: 192.0.0.163
+          ansible_user: sysadmin
+          ansible_python_interpreter: /usr/bin/python3
+          ansible_ssh_private_key_file: ~/.ssh/proxmox_template_ansible

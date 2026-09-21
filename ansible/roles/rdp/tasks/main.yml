@@ -1,0 +1,32 @@
+---
+- name: Install XRDP
+  ansible.builtin.apt:
+    name: xrdp
+    state: present
+
+- name: Add XRDP user to ssl-cert group
+  ansible.builtin.user:
+    name: xrdp
+    groups:
+      - ssl-cert
+    append: true
+  notify: Restart XRDP
+
+- name: Enable and start XRDP
+  ansible.builtin.systemd:
+    name: xrdp
+    enabled: true
+    state: started
+
+- name: Enable and start XRDP session manager
+  ansible.builtin.systemd:
+    name: xrdp-sesman
+    enabled: true
+    state: started
+
+- name: Allow RDP through UFW
+  community.general.ufw:
+    rule: allow
+    port: "3389"
+    proto: tcp
+  notify: Reload UFW

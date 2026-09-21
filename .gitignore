@@ -1,0 +1,44 @@
+# Terraform working directories
+.terraform/
+**/.terraform/
+
+# Terraform state and plans
+*.tfstate
+*.tfstate.*
+*.tfplan
+/tfplan
+terraform-state*.json
+crash.log
+crash.*.log
+
+# Local Terraform values
+*.tfvars
+*.tfvars.json
+*.tfvars.json.*
+!*.tfvars.example
+!*.tfvars.json.example
+
+# Credentials and private keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+id_*
+/yes
+/yes.pub
+
+# Generated and temporary files
+*.backup
+*.before-*
+*.disabled
+ansible/reports/
+ansible/inventory/generated_*.yml
+
+# Old local backup modules
+/modules/backup/
+
+# Lock files accidentally generated inside child modules
+/modules/**/.terraform.lock.hcl

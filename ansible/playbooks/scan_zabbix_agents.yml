@@ -1,0 +1,12 @@
+---
+- name: Scan network for Zabbix agents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  vars_files:
+    - ../group_vars/zabbix.yml
+
+  roles:
+    - role: zabbix_discovery

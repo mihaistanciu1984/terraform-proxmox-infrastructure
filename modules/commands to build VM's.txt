@@ -1,0 +1,5 @@
+Only Ubuntu (...skips over Windows):
+terraform apply -var="create_windows=false"
+
+Only Windows (...skips over Ubuntu):
+terraform apply -var="create_ubuntu=false"

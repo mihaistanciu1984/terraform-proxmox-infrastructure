@@ -1,0 +1,71 @@
+---
+- name: Configure Ubuntu virtual machines
+  hosts: ubuntu
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for SSH connectivity
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+        sleep: 10
+        connect_timeout: 5
+      become: false
+
+    - name: Gather system information after SSH is available
+      ansible.builtin.setup:
+      become: false
+
+    - name: Display target VM information
+      ansible.builtin.debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "Distribution: {{ ansible_distribution }}"
+          - "Version: {{ ansible_distribution_version }}"
+          - "Management IP: {{ ansible_host }}"
+
+  roles:
+    - role: common
+    - role: ssh
+    - role: rdp
+
+  post_tasks:
+    - name: Collect service information
+      ansible.builtin.service_facts:
+
+    - name: Verify SSH service
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['ssh.service'].state == 'running'
+        fail_msg: "SSH service is not running"
+        success_msg: "SSH service is running"
+
+    - name: Verify XRDP service
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['xrdp.service'].state == 'running'
+        fail_msg: "XRDP service is not running"
+        success_msg: "XRDP service is running"
+
+    - name: Verify QEMU Guest Agent
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['qemu-guest-agent.service'].state == 'running'
+        fail_msg: "QEMU Guest Agent is not running"
+        success_msg: "QEMU Guest Agent is running"
+
+    - name: Check SSH port from Ansible controller
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        timeout: 30
+      delegate_to: localhost
+      become: false
+
+    - name: Check RDP port from Ansible controller
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 3389
+        timeout: 30
+      delegate_to: localhost
+      become: false

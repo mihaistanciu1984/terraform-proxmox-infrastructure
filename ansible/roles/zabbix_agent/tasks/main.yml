@@ -1,0 +1,125 @@
+---
+- name: Validate target operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version in ["20.04", "22.04", "24.04"]
+    fail_msg: >-
+      This role currently supports Ubuntu 20.04, 22.04 and 24.04.
+      Detected: {{ ansible_distribution }}
+      {{ ansible_distribution_version }}
+
+- name: Validate Zabbix configuration
+  ansible.builtin.assert:
+    that:
+      - zabbix_server != "127.0.0.1"
+      - zabbix_server_active != "127.0.0.1"
+    fail_msg: >-
+      Configure zabbix_server and zabbix_server_active
+      in group_vars/zabbix.yml.
+
+- name: Define Zabbix repository package
+  ansible.builtin.set_fact:
+    zabbix_release_package: >-
+      zabbix-release_latest_{{ zabbix_version_major
+      }}+ubuntu{{ ansible_distribution_version }}_all.deb
+    zabbix_release_url: >-
+      https://repo.zabbix.com/zabbix/{{ zabbix_version_major
+      }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{
+      zabbix_version_major }}+ubuntu{{
+      ansible_distribution_version }}_all.deb
+
+- name: Download official Zabbix repository package
+  ansible.builtin.get_url:
+    url: "{{ zabbix_release_url }}"
+    dest: "/tmp/{{ zabbix_release_package }}"
+    mode: "0644"
+
+- name: Install official Zabbix repository
+  ansible.builtin.apt:
+    deb: "/tmp/{{ zabbix_release_package }}"
+    state: present
+
+- name: Update apt cache after adding Zabbix repository
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install Zabbix Agent 2
+  ansible.builtin.apt:
+    name:
+      - zabbix-agent2
+    state: present
+
+- name: Configure allowed Zabbix Server
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: '^Server='
+    line: "Server={{ zabbix_server }}"
+    backup: true
+  notify: Restart Zabbix Agent 2
+
+- name: Configure active Zabbix Server
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: '^ServerActive='
+    line: "ServerActive={{ zabbix_server_active }}"
+    backup: true
+  notify: Restart Zabbix Agent 2
+
+- name: Configure Zabbix hostname
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: '^Hostname='
+    line: "Hostname={{ inventory_hostname }}"
+    backup: true
+  notify: Restart Zabbix Agent 2
+
+- name: Configure Zabbix listen port
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: '^ListenPort='
+    line: "ListenPort={{ zabbix_agent_port }}"
+    insertafter: '^# ListenPort='
+  notify: Restart Zabbix Agent 2
+
+- name: Allow Zabbix Agent through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ zabbix_agent_port | string }}"
+    proto: tcp
+    from_ip: "{{ zabbix_allowed_source }}"
+    comment: "Zabbix Agent passive checks"
+  when: zabbix_manage_ufw | bool
+
+- name: Enable and start Zabbix Agent 2
+  ansible.builtin.systemd:
+    name: zabbix-agent2
+    enabled: true
+    state: started
+
+- name: Apply pending handler changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Zabbix Agent configuration
+  ansible.builtin.command:
+    argv:
+      - zabbix_agent2
+      - -c
+      - /etc/zabbix/zabbix_agent2.conf
+      - -t
+      - agent.ping
+  register: zabbix_agent_test
+  changed_when: false
+
+- name: Display local Zabbix Agent test
+  ansible.builtin.debug:
+    var: zabbix_agent_test.stdout
+
+- name: Verify TCP 10050 from Ansible controller
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ zabbix_agent_port }}"
+    connect_timeout: 5
+    timeout: 30
+  delegate_to: localhost
+  become: false

@@ -1,0 +1,16 @@
+---
+# Rețeaua scanată din WSL/Ansible Controller.
+zabbix_scan_network: "192.0.0.0/24"
+
+# Portul implicit pentru verificări pasive.
+zabbix_agent_port: 10050
+
+# Zabbix Server sau Zabbix Proxy.
+zabbix_server: "192.0.0.93"
+zabbix_server_active: "192.0.0.93"
+
+# Rețeaua sau IP-ul căruia îi permitem acces pe TCP/10050.
+zabbix_allowed_source: "192.0.0.0/24"
+
+zabbix_version_major: "7.0"
+zabbix_manage_ufw: true

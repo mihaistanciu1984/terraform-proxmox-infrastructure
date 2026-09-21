@@ -1,0 +1,23 @@
+---
+- name: Install and configure Zabbix Agent 2
+  hosts: zabbix_targets
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../group_vars/zabbix.yml
+
+  pre_tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        sleep: 10
+        connect_timeout: 5
+      become: false
+
+    - name: Gather target information
+      ansible.builtin.setup:
+      become: false
+
+  roles:
+    - role: zabbix_agent

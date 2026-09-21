@@ -1,0 +1,10 @@
+#cloud-config
+users:
+  - default
+  - name: admin-nou
+    gecos: Administrator Sistem
+    groups: sudo, wheel
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: "Parola "
+    sudo: ALL=(ALL) NOPASSWD:ALL

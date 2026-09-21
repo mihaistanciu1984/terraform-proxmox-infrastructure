@@ -1,0 +1,76 @@
+---
+- name: Validate Zabbix scan variables
+  ansible.builtin.assert:
+    that:
+      - zabbix_scan_network | length > 0
+      - zabbix_agent_port | int > 0
+    fail_msg: "Zabbix scan network or port is not configured"
+
+- name: Check that Nmap is installed on the controller
+  ansible.builtin.command:
+    argv:
+      - nmap
+      - --version
+  register: zabbix_nmap_version
+  changed_when: false
+
+- name: Scan network for open Zabbix agent ports
+  ansible.builtin.command:
+    argv:
+      - nmap
+      - -n
+      - -Pn
+      - -p
+      - "{{ zabbix_agent_port | string }}"
+      - --open
+      - -oG
+      - "-"
+      - "{{ zabbix_scan_network }}"
+  register: zabbix_nmap_scan
+  changed_when: false
+
+- name: Extract IP addresses with TCP 10050 open
+  ansible.builtin.set_fact:
+    zabbix_open_ips: >-
+      {{
+        zabbix_nmap_scan.stdout
+        | regex_findall(
+            'Host: ([0-9.]+).*Ports: '
+            ~ (zabbix_agent_port | string)
+            ~ '/open'
+          )
+        | unique
+        | sort
+      }}
+
+- name: Create reports directory
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/../reports"
+    state: directory
+    mode: "0755"
+
+- name: Save IP addresses with Zabbix port open
+  ansible.builtin.copy:
+    dest: >-
+      {{ playbook_dir }}/../reports/zabbix_open_{{ zabbix_agent_port }}.txt
+    content: |
+      {% for ip_address in zabbix_open_ips %}
+      {{ ip_address }}
+      {% endfor %}
+    mode: "0644"
+
+- name: Display discovered Zabbix agents
+  ansible.builtin.debug:
+    msg:
+      - "Network scanned: {{ zabbix_scan_network }}"
+      - "Port checked: {{ zabbix_agent_port }}"
+      - >-
+        Open IP addresses:
+        {{
+          zabbix_open_ips | join(', ')
+          if zabbix_open_ips | length > 0
+          else 'none'
+        }}
+      - >-
+        Report:
+        {{ playbook_dir }}/../reports/zabbix_open_{{ zabbix_agent_port }}.txt
