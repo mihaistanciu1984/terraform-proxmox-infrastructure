@@ -1,0 +1,9 @@
+{
+  "create_ubuntu": true,
+  "ubuntu_vms": {
+    "ubuntu-lab-01": {
+      "vm_id": 101,
+      "ip_address": "192.0.2.101/24"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "create_windows": true,
+  "windows_username": "example-admin",
+  "windows_vms": {
+    "windows-lab-01": {
+      "vm_id": 201,
+      "template_id": 9000,
+      "ip_address": "192.0.2.201/24",
+      "windows_username": "example-admin"
+    }
+  }
+}
