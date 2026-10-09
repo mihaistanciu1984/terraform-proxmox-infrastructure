@@ -273,3 +273,76 @@ git grep -n -I -E '192\.168\.|BEGIN OPENSSH PRIVATE KEY|BEGIN RSA PRIVATE KEY'
 This repository is an anonymized infrastructure automation example.
 
 Node names, IP addresses, template identifiers, usernames and paths must be adapted before the project is used in another environment.
+
+
+## Infrastructure management application
+
+The project includes an interactive Bash application for Terraform, Ansible and Proxmox administration.
+
+Start the application from WSL:
+
+```bash
+cd /path/to/terraform-proxmox-infrastructure/ansible
+bash scripts/infrastructure_manager.sh
+```
+
+### Main menu
+
+```text
+MAIN MENU
+
+1) Virtual machine management
+2) Proxmox host inventory
+3) Monitoring and Zabbix
+0) Exit
+```
+
+### Virtual machine management
+
+The virtual machine submenu provides operations for:
+
+- Creating and destroying Ubuntu virtual machines
+- Creating and destroying Windows virtual machines
+- Generating the Ubuntu Ansible inventory
+- Testing Ansible and SSH connectivity
+- Applying the Ubuntu Ansible configuration
+- Checking SSH, RDP and Zabbix services
+
+### Proxmox host inventory
+
+The read-only inventory collects information about:
+
+- Hardware and BIOS
+- CPU and memory
+- PCI devices, GPUs and IOMMU
+- Storage, LVM, ZFS and RAID
+- Network interfaces, bridges, bonds and VLANs
+- Operating system and Proxmox versions
+- Services, cluster and HA
+- Ceph health and OSDs
+- Virtual machines and containers
+
+Reports are saved locally under:
+
+```text
+ansible/reports/proxmox/
+```
+
+### Configure the inventory
+
+Copy the sanitized example:
+
+```bash
+cp ansible/inventory/proxmox_hosts.example.yml \
+   ansible/inventory/proxmox_hosts.yml
+```
+
+Edit the local inventory:
+
+```bash
+nano ansible/inventory/proxmox_hosts.yml
+```
+
+Replace the example hostnames, documentation IP addresses and SSH key path with values from your environment.
+
+The real Proxmox inventory and generated reports are excluded from Git.
