@@ -1,0 +1,258 @@
+---
+- name: Collect Proxmox storage inventory
+  hosts: proxmox_hosts
+  gather_facts: false
+
+  vars:
+    local_report_directory: >-
+      {{
+        report_root
+        | default(playbook_dir + '/../../reports/proxmox', true)
+      }}
+
+  tasks:
+    - name: Create the local report directory
+      ansible.builtin.file:
+        path: "{{ local_report_directory }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate the report timestamp
+      ansible.builtin.set_fact:
+        report_timestamp: >-
+          {{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}
+
+    - name: Collect storage information
+      ansible.builtin.shell: |
+        echo "============================================================"
+        echo "PROXMOX STORAGE INVENTORY"
+        echo "============================================================"
+        echo "Inventory host : {{ inventory_hostname }}"
+        echo "Generated      : $(date --iso-8601=seconds)"
+        echo "Hostname       : $(hostname)"
+        echo
+
+        echo "============================================================"
+        echo "BLOCK DEVICES"
+        echo "============================================================"
+        lsblk -e 7 \
+          -o NAME,PATH,TYPE,SIZE,FSTYPE,FSVER,MOUNTPOINTS,MODEL,SERIAL,ROTA,TRAN \
+          2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "FILESYSTEM IDENTIFIERS"
+        echo "============================================================"
+        blkid 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "FILESYSTEM USAGE"
+        echo "============================================================"
+        df -hT 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "MOUNT POINTS"
+        echo "============================================================"
+        findmnt \
+          -o TARGET,SOURCE,FSTYPE,OPTIONS,SIZE,USED,AVAIL,USE% \
+          2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "LVM PHYSICAL VOLUMES"
+        echo "============================================================"
+        if command -v pvs >/dev/null 2>&1; then
+            pvs -a -o +pv_used,pv_free,dev_size 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvs"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "LVM VOLUME GROUPS"
+        echo "============================================================"
+        if command -v vgs >/dev/null 2>&1; then
+            vgs -a -o +vg_free,vg_size,pv_count,lv_count 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] vgs"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "LVM LOGICAL AND THIN VOLUMES"
+        echo "============================================================"
+        if command -v lvs >/dev/null 2>&1; then
+            lvs -a \
+              -o lv_name,vg_name,lv_size,lv_attr,pool_lv,origin,data_percent,metadata_percent,devices \
+              2>&1 || true
+        else
+            echo "[NOT AVAILABLE] lvs"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "LINUX SOFTWARE RAID"
+        echo "============================================================"
+        cat /proc/mdstat 2>&1 || true
+        echo
+
+        if command -v mdadm >/dev/null 2>&1; then
+            echo "--- MDADM arrays ---"
+            mdadm --detail --scan 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] mdadm"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "ZFS POOLS"
+        echo "============================================================"
+        if command -v zpool >/dev/null 2>&1; then
+            zpool list -v 2>&1 || true
+            echo
+            zpool status -v 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] zpool"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "ZFS DATASETS"
+        echo "============================================================"
+        if command -v zfs >/dev/null 2>&1; then
+            zfs list \
+              -o name,used,avail,refer,mountpoint,compression,dedup \
+              2>&1 || true
+        else
+            echo "[NOT AVAILABLE] zfs"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "PROXMOX STORAGE STATUS"
+        echo "============================================================"
+        if command -v pvesm >/dev/null 2>&1; then
+            pvesm status 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvesm"
+        fi
+        echo
+
+        echo "--- Proxmox storage configuration ---"
+        if [[ -r /etc/pve/storage.cfg ]]; then
+            cat /etc/pve/storage.cfg 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] /etc/pve/storage.cfg"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "SCSI DEVICES"
+        echo "============================================================"
+        if command -v lsscsi >/dev/null 2>&1; then
+            lsscsi -g 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] lsscsi"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "NVME DEVICES"
+        echo "============================================================"
+        if command -v nvme >/dev/null 2>&1; then
+            nvme list 2>&1 || true
+
+            for nvme_device in /dev/nvme[0-9]; do
+                [[ -e "${nvme_device}" ]] || continue
+                echo
+                echo "--- SMART log: ${nvme_device} ---"
+                nvme smart-log "${nvme_device}" 2>&1 || true
+            done
+        else
+            echo "[NOT AVAILABLE] nvme"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "SMART DISK HEALTH"
+        echo "============================================================"
+        if command -v smartctl >/dev/null 2>&1; then
+            while read -r disk_name disk_type; do
+                [[ "${disk_type}" == "disk" ]] || continue
+
+                echo
+                echo "--- /dev/${disk_name} ---"
+                smartctl -i -H "/dev/${disk_name}" 2>&1 || true
+            done < <(lsblk -dn -o NAME,TYPE)
+        else
+            echo "[NOT AVAILABLE] smartctl"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "HARDWARE RAID CONTROLLER"
+        echo "============================================================"
+        STORCLI=""
+
+        for candidate in \
+          /usr/sbin/storcli \
+          /usr/sbin/storcli64 \
+          /opt/MegaRAID/storcli/storcli64 \
+          /opt/MegaRAID/storcli/storcli
+        do
+            if [[ -x "${candidate}" ]]; then
+                STORCLI="${candidate}"
+                break
+            fi
+        done
+
+        if [[ -n "${STORCLI}" ]]; then
+            echo "StorCLI: ${STORCLI}"
+            "${STORCLI}" /call show 2>&1 || true
+            echo
+            "${STORCLI}" /call /eall /sall show 2>&1 || true
+        elif command -v megasasctl >/dev/null 2>&1; then
+            megasasctl 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] StorCLI or megasasctl"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "MULTIPATH"
+        echo "============================================================"
+        if command -v multipath >/dev/null 2>&1; then
+            multipath -ll 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] multipath"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "END OF REPORT"
+        echo "============================================================"
+      args:
+        executable: /bin/bash
+      register: storage_report
+      changed_when: false
+      failed_when: false
+
+    - name: Save the storage report locally
+      ansible.builtin.copy:
+        content: "{{ storage_report.stdout }}\n"
+        dest: >-
+          {{
+            local_report_directory
+          }}/{{ inventory_hostname }}_storage_{{ report_timestamp }}.txt
+        mode: "0640"
+      delegate_to: localhost
+
+    - name: Display the saved report path
+      ansible.builtin.debug:
+        msg: >-
+          Report saved to
+          {{ local_report_directory }}/{{ inventory_hostname }}_storage_{{ report_timestamp }}.txt

@@ -1,0 +1,235 @@
+---
+- name: Collect Proxmox network inventory
+  hosts: proxmox_hosts
+  gather_facts: false
+
+  vars:
+    local_report_directory: >-
+      {{
+        report_root
+        | default(playbook_dir + '/../../reports/proxmox', true)
+      }}
+
+  tasks:
+    - name: Create the local report directory
+      ansible.builtin.file:
+        path: "{{ local_report_directory }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate the report timestamp
+      ansible.builtin.set_fact:
+        report_timestamp: >-
+          {{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}
+
+    - name: Collect network information
+      ansible.builtin.shell: |
+        echo "============================================================"
+        echo "PROXMOX NETWORK INVENTORY"
+        echo "============================================================"
+        echo "Inventory host : {{ inventory_hostname }}"
+        echo "Generated      : $(date --iso-8601=seconds)"
+        echo "Hostname       : $(hostname)"
+        echo
+
+        echo "============================================================"
+        echo "NETWORK INTERFACES"
+        echo "============================================================"
+        ip -brief address show 2>&1 || true
+        echo
+
+        echo "--- Detailed link information ---"
+        ip -details link show 2>&1 || true
+        echo
+
+        echo "--- Interface statistics ---"
+        ip -statistics link show 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "IP ADDRESSES"
+        echo "============================================================"
+        ip address show 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "ROUTING TABLE"
+        echo "============================================================"
+        ip route show table all 2>&1 || true
+        echo
+
+        echo "--- IPv6 routes ---"
+        ip -6 route show table all 2>&1 || true
+        echo
+
+        echo "--- Routing rules ---"
+        ip rule show 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "ARP AND NEIGHBOR TABLE"
+        echo "============================================================"
+        ip neighbor show 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "LINUX BRIDGES"
+        echo "============================================================"
+        if command -v bridge >/dev/null 2>&1; then
+            bridge link show 2>&1 || true
+            echo
+            echo "--- Bridge VLANs ---"
+            bridge vlan show 2>&1 || true
+            echo
+            echo "--- Bridge forwarding database ---"
+            bridge fdb show 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] bridge"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "NETWORK BONDING"
+        echo "============================================================"
+        if compgen -G "/proc/net/bonding/*" >/dev/null; then
+            for bonding_file in /proc/net/bonding/*; do
+                echo "--- ${bonding_file} ---"
+                cat "${bonding_file}" 2>&1 || true
+                echo
+            done
+        else
+            echo "[INFO] No Linux bonding interfaces detected."
+        fi
+        echo
+
+        echo "============================================================"
+        echo "OPEN VSWITCH"
+        echo "============================================================"
+        if command -v ovs-vsctl >/dev/null 2>&1; then
+            ovs-vsctl show 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] ovs-vsctl"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "NETWORK INTERFACE CONFIGURATION"
+        echo "============================================================"
+        if [[ -r /etc/network/interfaces ]]; then
+            cat /etc/network/interfaces 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] /etc/network/interfaces"
+        fi
+        echo
+
+        if [[ -d /etc/network/interfaces.d ]]; then
+            for interface_file in /etc/network/interfaces.d/*; do
+                [[ -f "${interface_file}" ]] || continue
+                echo "--- ${interface_file} ---"
+                cat "${interface_file}" 2>&1 || true
+                echo
+            done
+        fi
+
+        echo "============================================================"
+        echo "PROXMOX NETWORK CONFIGURATION"
+        echo "============================================================"
+        if command -v pvesh >/dev/null 2>&1; then
+            pvesh get "/nodes/$(hostname)/network" \
+              --output-format yaml 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvesh"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "PHYSICAL NIC DRIVER AND LINK INFORMATION"
+        echo "============================================================"
+        if command -v ethtool >/dev/null 2>&1; then
+            for interface_path in /sys/class/net/*; do
+                interface_name="$(basename "${interface_path}")"
+
+                [[ "${interface_name}" == "lo" ]] && continue
+                [[ -e "${interface_path}/device" ]] || continue
+
+                echo "--- ${interface_name}: link settings ---"
+                ethtool "${interface_name}" 2>&1 || true
+                echo
+
+                echo "--- ${interface_name}: driver information ---"
+                ethtool -i "${interface_name}" 2>&1 || true
+                echo
+            done
+        else
+            echo "[NOT AVAILABLE] ethtool"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "DNS CONFIGURATION"
+        echo "============================================================"
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl status 2>&1 || true
+        fi
+        echo
+
+        echo "--- /etc/resolv.conf ---"
+        cat /etc/resolv.conf 2>&1 || true
+        echo
+
+        echo "--- /etc/hosts ---"
+        cat /etc/hosts 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "LISTENING NETWORK SOCKETS"
+        echo "============================================================"
+        ss -tulpn 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "PROXMOX FIREWALL STATUS"
+        echo "============================================================"
+        if command -v pve-firewall >/dev/null 2>&1; then
+            pve-firewall status 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pve-firewall"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "LLDP NEIGHBORS"
+        echo "============================================================"
+        if command -v lldpcli >/dev/null 2>&1; then
+            lldpcli show neighbors details 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] lldpcli"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "END OF REPORT"
+        echo "============================================================"
+      args:
+        executable: /bin/bash
+      register: network_report
+      changed_when: false
+      failed_when: false
+
+    - name: Save the network report locally
+      ansible.builtin.copy:
+        content: "{{ network_report.stdout }}\n"
+        dest: >-
+          {{
+            local_report_directory
+          }}/{{ inventory_hostname }}_network_{{ report_timestamp }}.txt
+        mode: "0640"
+      delegate_to: localhost
+
+    - name: Display the saved report path
+      ansible.builtin.debug:
+        msg: >-
+          Report saved to
+          {{ local_report_directory }}/{{ inventory_hostname }}_network_{{ report_timestamp }}.txt

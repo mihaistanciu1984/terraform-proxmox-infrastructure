@@ -1,0 +1,32 @@
+---
+# Run all read-only Proxmox inventory categories.
+
+- name: Import hardware and BIOS inventory
+  ansible.builtin.import_playbook: hardware_bios.yml
+
+- name: Import CPU and memory inventory
+  ansible.builtin.import_playbook: cpu_memory.yml
+
+- name: Import PCI GPU and IOMMU inventory
+  ansible.builtin.import_playbook: pci_gpu_iommu.yml
+
+- name: Import storage inventory
+  ansible.builtin.import_playbook: storage.yml
+
+- name: Import network inventory
+  ansible.builtin.import_playbook: network.yml
+
+- name: Import operating system and Proxmox inventory
+  ansible.builtin.import_playbook: os_proxmox.yml
+
+- name: Import services inventory
+  ansible.builtin.import_playbook: services.yml
+
+- name: Import cluster and HA inventory
+  ansible.builtin.import_playbook: cluster_ha.yml
+
+- name: Import Ceph inventory
+  ansible.builtin.import_playbook: ceph.yml
+
+- name: Import virtual machine and container inventory
+  ansible.builtin.import_playbook: vm_ct_inventory.yml

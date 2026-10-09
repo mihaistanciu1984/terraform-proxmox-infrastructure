@@ -1,0 +1,139 @@
+---
+- name: Collect Proxmox CPU and memory inventory
+  hosts: proxmox_hosts
+  gather_facts: false
+
+  vars:
+    local_report_directory: >-
+      {{
+        report_root
+        | default(playbook_dir + '/../../reports/proxmox', true)
+      }}
+
+  tasks:
+    - name: Create the local report directory
+      ansible.builtin.file:
+        path: "{{ local_report_directory }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate the report timestamp
+      ansible.builtin.set_fact:
+        report_timestamp: >-
+          {{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}
+
+    - name: Collect CPU and memory information
+      ansible.builtin.shell: |
+        echo "============================================================"
+        echo "PROXMOX CPU AND MEMORY INVENTORY"
+        echo "============================================================"
+        echo "Inventory host : {{ inventory_hostname }}"
+        echo "Generated      : $(date --iso-8601=seconds)"
+        echo "Hostname       : $(hostname)"
+        echo
+
+        echo "============================================================"
+        echo "CPU SUMMARY"
+        echo "============================================================"
+        lscpu 2>&1 || true
+        echo
+
+        echo "--- Available processing units ---"
+        echo "Logical CPUs: $(nproc --all 2>/dev/null || echo unavailable)"
+        echo
+
+        echo "--- CPU topology ---"
+        lscpu --extended=CPU,NODE,SOCKET,CORE,ONLINE,MAXMHZ,MINMHZ \
+          2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "PROCESSOR DMI INFORMATION"
+        echo "============================================================"
+        if command -v dmidecode >/dev/null 2>&1; then
+            dmidecode --type processor 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] dmidecode"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "CPU CACHE INFORMATION"
+        echo "============================================================"
+        if command -v dmidecode >/dev/null 2>&1; then
+            dmidecode --type cache 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] dmidecode"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "MEMORY USAGE"
+        echo "============================================================"
+        free -h 2>&1 || true
+        echo
+
+        echo "--- Kernel memory summary ---"
+        grep -E \
+          '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree|HugePages|Hugepagesize)' \
+          /proc/meminfo 2>&1 || true
+        echo
+
+        echo "--- Virtual memory statistics ---"
+        vmstat -s 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "MEMORY DIMM INVENTORY"
+        echo "============================================================"
+        if command -v dmidecode >/dev/null 2>&1; then
+            dmidecode --type memory 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] dmidecode"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "NUMA INFORMATION"
+        echo "============================================================"
+        if command -v numactl >/dev/null 2>&1; then
+            numactl --hardware 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] numactl"
+            echo
+            echo "--- NUMA nodes detected in sysfs ---"
+            find /sys/devices/system/node \
+              -maxdepth 1 \
+              -type d \
+              -name 'node*' \
+              -printf '%f\n' 2>/dev/null |
+              sort -V || true
+        fi
+        echo
+
+        echo "============================================================"
+        echo "END OF REPORT"
+        echo "============================================================"
+      args:
+        executable: /bin/bash
+      register: cpu_memory_report
+      changed_when: false
+      failed_when: false
+
+    - name: Save the CPU and memory report locally
+      ansible.builtin.copy:
+        content: "{{ cpu_memory_report.stdout }}\n"
+        dest: >-
+          {{
+            local_report_directory
+          }}/{{ inventory_hostname }}_cpu_memory_{{ report_timestamp }}.txt
+        mode: "0640"
+      delegate_to: localhost
+
+    - name: Display the saved report path
+      ansible.builtin.debug:
+        msg: >-
+          Report saved to
+          {{ local_report_directory }}/{{ inventory_hostname }}_cpu_memory_{{ report_timestamp }}.txt

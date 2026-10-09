@@ -42,3 +42,7 @@ ansible/inventory/generated_*.yml
 
 # Lock files accidentally generated inside child modules
 /modules/**/.terraform.lock.hcl
+
+# Local Proxmox inventory and generated reports
+ansible/inventory/proxmox_hosts.yml
+ansible/reports/proxmox/

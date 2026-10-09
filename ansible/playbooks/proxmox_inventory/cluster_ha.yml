@@ -1,0 +1,218 @@
+---
+- name: Collect Proxmox cluster and HA inventory
+  hosts: proxmox_hosts
+  gather_facts: false
+
+  vars:
+    local_report_directory: >-
+      {{
+        report_root
+        | default(playbook_dir + '/../../reports/proxmox', true)
+      }}
+
+  tasks:
+    - name: Create the local report directory
+      ansible.builtin.file:
+        path: "{{ local_report_directory }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate the report timestamp
+      ansible.builtin.set_fact:
+        report_timestamp: >-
+          {{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}
+
+    - name: Collect cluster and HA information
+      ansible.builtin.shell: |
+        echo "============================================================"
+        echo "PROXMOX CLUSTER AND HA INVENTORY"
+        echo "============================================================"
+        echo "Inventory host : {{ inventory_hostname }}"
+        echo "Generated      : $(date --iso-8601=seconds)"
+        echo "Hostname       : $(hostname)"
+        echo
+
+        echo "============================================================"
+        echo "CLUSTER STATUS"
+        echo "============================================================"
+        if command -v pvecm >/dev/null 2>&1; then
+            pvecm status 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvecm"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "CLUSTER NODES"
+        echo "============================================================"
+        if command -v pvecm >/dev/null 2>&1; then
+            pvecm nodes 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvecm"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "CLUSTER API STATUS"
+        echo "============================================================"
+        if command -v pvesh >/dev/null 2>&1; then
+            pvesh get /cluster/status \
+              --output-format yaml 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvesh"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "CLUSTER RESOURCES"
+        echo "============================================================"
+        if command -v pvesh >/dev/null 2>&1; then
+            pvesh get /cluster/resources \
+              --output-format yaml 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvesh"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "COROSYNC QUORUM"
+        echo "============================================================"
+        if command -v corosync-quorumtool >/dev/null 2>&1; then
+            corosync-quorumtool -s 2>&1 || true
+            echo
+            corosync-quorumtool -l 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] corosync-quorumtool"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "COROSYNC LINKS"
+        echo "============================================================"
+        if command -v corosync-cfgtool >/dev/null 2>&1; then
+            corosync-cfgtool -s 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] corosync-cfgtool"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "COROSYNC CONFIGURATION"
+        echo "============================================================"
+        if [[ -r /etc/pve/corosync.conf ]]; then
+            cat /etc/pve/corosync.conf 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] /etc/pve/corosync.conf"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "PMXCFS STATUS"
+        echo "============================================================"
+        mount |
+          grep '/etc/pve' 2>&1 || \
+          echo "[WARNING] /etc/pve mount was not detected."
+        echo
+
+        echo "--- Cluster members ---"
+        if [[ -r /etc/pve/.members ]]; then
+            cat /etc/pve/.members 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] /etc/pve/.members"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "HIGH AVAILABILITY STATUS"
+        echo "============================================================"
+        if command -v ha-manager >/dev/null 2>&1; then
+            ha-manager status 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] ha-manager"
+        fi
+        echo
+
+        echo "--- HA configuration ---"
+        if command -v ha-manager >/dev/null 2>&1; then
+            ha-manager config 2>&1 || true
+        fi
+        echo
+
+        echo "--- HA resources ---"
+        if command -v pvesh >/dev/null 2>&1; then
+            pvesh get /cluster/ha/resources \
+              --output-format yaml 2>&1 || true
+        fi
+        echo
+
+        echo "--- HA groups ---"
+        if command -v pvesh >/dev/null 2>&1; then
+            pvesh get /cluster/ha/groups \
+              --output-format yaml 2>&1 || true
+        fi
+        echo
+
+        echo "============================================================"
+        echo "REPLICATION STATUS"
+        echo "============================================================"
+        if command -v pvesr >/dev/null 2>&1; then
+            pvesr status 2>&1 || true
+        else
+            echo "[NOT AVAILABLE] pvesr"
+        fi
+        echo
+
+        echo "============================================================"
+        echo "CLUSTER SERVICE STATUS"
+        echo "============================================================"
+        for service_name in \
+          pve-cluster \
+          corosync \
+          pve-ha-lrm \
+          pve-ha-crm
+        do
+            printf '%-20s ' "${service_name}"
+            systemctl is-active "${service_name}" 2>/dev/null || true
+        done
+        echo
+
+        echo "============================================================"
+        echo "RECENT CLUSTER EVENTS"
+        echo "============================================================"
+        journalctl \
+          --boot \
+          --unit=pve-cluster \
+          --unit=corosync \
+          --unit=pve-ha-lrm \
+          --unit=pve-ha-crm \
+          --priority=warning \
+          --no-pager \
+          --lines=200 2>&1 || true
+        echo
+
+        echo "============================================================"
+        echo "END OF REPORT"
+        echo "============================================================"
+      args:
+        executable: /bin/bash
+      register: cluster_ha_report
+      changed_when: false
+      failed_when: false
+
+    - name: Save the cluster and HA report locally
+      ansible.builtin.copy:
+        content: "{{ cluster_ha_report.stdout }}\n"
+        dest: >-
+          {{
+            local_report_directory
+          }}/{{ inventory_hostname }}_cluster_ha_{{ report_timestamp }}.txt
+        mode: "0640"
+      delegate_to: localhost
+
+    - name: Display the saved report path
+      ansible.builtin.debug:
+        msg: >-
+          Report saved to
+          {{ local_report_directory }}/{{ inventory_hostname }}_cluster_ha_{{ report_timestamp }}.txt

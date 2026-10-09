@@ -3,9 +3,9 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ANSIBLE_DIR="/mnt/c/Users/example-user/Documents/DEV/terraform/terraform-proxmox/ansible"
-TERRAFORM_DIR="/mnt/c/Users/example-user/Documents/DEV/terraform/terraform-proxmox"
-TERRAFORM_WINDOWS_DIR='C:\Users\example-user\Documents\DEV\terraform\terraform-proxmox'
+ANSIBLE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TERRAFORM_DIR="$(cd "${ANSIBLE_DIR}/.." && pwd)"
+TERRAFORM_WINDOWS_DIR="$(wslpath -w "${TERRAFORM_DIR}")"
 
 if [[ ! -d "${TERRAFORM_DIR}" ]]; then
     echo "EROARE: Directorul Terraform nu există: ${TERRAFORM_DIR}"
@@ -22,10 +22,12 @@ INVENTORY_STATIC="${ANSIBLE_DIR}/inventory/hosts.yml"
 INVENTORY_GENERATED="${ANSIBLE_DIR}/inventory/generated_ubuntu.yml"
 
 CREATE_VM_SCRIPT="${SCRIPT_DIR}/create_ubuntu_vm.sh"
-CREATE_WINDOWS_VM_SCRIPT="${SCRIPT_DIR}/create_windows_vm.sh"
 DESTROY_VM_SCRIPT="${SCRIPT_DIR}/destroy_ubuntu_vm.sh"
-ZABBIX_SCRIPT="${SCRIPT_DIR}/zabbix_manager.sh"
 
+CREATE_WINDOWS_VM_SCRIPT="${SCRIPT_DIR}/create_windows_vm.sh"
+DESTROY_WINDOWS_VM_SCRIPT="${SCRIPT_DIR}/destroy_windows_vm.sh"
+ZABBIX_SCRIPT="${SCRIPT_DIR}/zabbix_manager.sh"
+PROXMOX_INVENTORY_SCRIPT="${SCRIPT_DIR}/proxmox_host_inventory_manager.sh"
 
 export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
 
@@ -168,7 +170,7 @@ configure_ubuntu_vm() {
     select_vm || return 1
 
     echo
-    read -rp "Configurez ${SELECTED_VM} prin Ansible? [y/N]: " confirmation
+    read -rp "Reconfigurez ${SELECTED_VM} prin Ansible? [y/N]: " confirmation
 
     if [[ ! "${confirmation}" =~ ^[Yy]$ ]]; then
         echo "[INFO] Operația a fost anulată."
@@ -232,6 +234,16 @@ open_zabbix_menu() {
     bash "${ZABBIX_SCRIPT}"
 }
 
+open_proxmox_inventory_menu() {
+    if [[ ! -f "${PROXMOX_INVENTORY_SCRIPT}" ]]; then
+        echo "[ERROR] Missing script: ${PROXMOX_INVENTORY_SCRIPT}"
+        echo "[INFO] The Proxmox inventory menu has not been created yet."
+        return 1
+    fi
+
+    bash "${PROXMOX_INVENTORY_SCRIPT}"
+}
+
 full_existing_vm_workflow() {
     select_vm || return 1
 
@@ -268,52 +280,124 @@ full_existing_vm_workflow() {
     fi
 }
 
-while true; do
-    print_header
+vm_management_menu() {
+    while true; do
+        print_header
 
-    echo "1) Creează un VM Ubuntu nou"
-    echo "2) Listează VM-urile Ubuntu administrate"
-    echo "3) Afișează inventarul Ansible"
-    echo "4) Rulează Terraform validate și plan GLOBAL"
-    echo "5) Testează conexiunea Ansible/SSH"
-    echo "6) Configurează un VM Ubuntu prin Ansible"
-    echo "7) Verifică SSH, RDP și Zabbix"
-    echo "8) Deschide meniul Zabbix"
-    echo "9) Flux complet pentru un VM existent"
-    echo "10) Distruge un VM Ubuntu"
-    echo "11) Creează un VM Windows nou"
-    echo "0) Ieșire"
-    echo
+        echo "VIRTUAL MACHINE MANAGEMENT"
+        echo
+        echo "1) Create a new Ubuntu VM"
+        echo "2) List managed Ubuntu VMs"
+        echo "3) Show Ansible inventory"
+        echo "4) Run Terraform validate and global plan"
+        echo "5) Test Ansible/SSH connection"
+        echo "6) Reconfigure an existing Ubuntu VM with Ansible"
+        echo "7) Check SSH, RDP and Zabbix"
+        echo "8) Open Zabbix menu"
+        echo "9) Run the complete workflow for an existing VM"
+        echo "10) Destroy an Ubuntu VM"
+        echo "11) Create a new Windows VM"
+        echo "12) Destroy a Windows VM"
+        echo "0) Return to main menu"
+        echo
 
-    read -rp "Selectează opțiunea: " option
-    echo
+        read -rp "Select an option: " option
+        echo
 
-    case "${option}" in
-        1) create_ubuntu_vm ;;
-        2) list_ubuntu_vms ;;
-        3) show_ansible_inventory ;;
-        4) terraform_plan ;;
-        5) test_ansible_connection ;;
-        6) configure_ubuntu_vm ;;
-        7) check_vm_services ;;
-        8) open_zabbix_menu ;;
-        9) full_existing_vm_workflow ;;
-        10)
-            if [[ ! -f "${DESTROY_VM_SCRIPT}" ]]; then
-                echo "[EROARE] Lipsește ${DESTROY_VM_SCRIPT}"
-            else
-                bash "${DESTROY_VM_SCRIPT}"
-            fi
-            ;;
-        11) create_windows_vm ;;
-        0)
-            echo "Închidere."
-            exit 0
-            ;;
-        *)
-            echo "[EROARE] Opțiune invalidă."
-            ;;
-    esac
+        case "${option}" in
+            1)
+                create_ubuntu_vm
+                ;;
+            2)
+                list_ubuntu_vms
+                ;;
+            3)
+                show_ansible_inventory
+                ;;
+            4)
+                terraform_plan
+                ;;
+            5)
+                test_ansible_connection
+                ;;
+            6)
+                configure_ubuntu_vm
+                ;;
+            7)
+                check_vm_services
+                ;;
+            8)
+                open_zabbix_menu
+                ;;
+            9)
+                full_existing_vm_workflow
+                ;;
+            10)
+                if [[ ! -f "${DESTROY_VM_SCRIPT}" ]]; then
+                    echo "[ERROR] Missing script: ${DESTROY_VM_SCRIPT}"
+                else
+                    bash "${DESTROY_VM_SCRIPT}"
+                fi
+                ;;
+            11)
+                create_windows_vm
+                ;;
+            12)
+                if [[ ! -f "${DESTROY_WINDOWS_VM_SCRIPT}" ]]; then
+                    echo "[ERROR] Missing script: ${DESTROY_WINDOWS_VM_SCRIPT}"
+                else
+                    bash "${DESTROY_WINDOWS_VM_SCRIPT}"
+                fi
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                echo "[ERROR] Invalid option."
+                ;;
+        esac
 
-    pause_menu
-done
+        pause_menu
+    done
+}
+
+main_menu() {
+    while true; do
+        print_header
+
+        echo "MAIN MENU"
+        echo
+        echo "1) Virtual machine management"
+        echo "2) Proxmox host inventory"
+        echo "3) Monitoring and Zabbix"
+        echo "0) Exit"
+        echo
+
+        read -rp "Select an option: " option
+        echo
+
+        case "${option}" in
+            1)
+                vm_management_menu
+                ;;
+            2)
+                open_proxmox_inventory_menu
+                pause_menu
+                ;;
+            3)
+                open_zabbix_menu
+                pause_menu
+                ;;
+            0)
+                echo "Application closed."
+                exit 0
+                ;;
+            *)
+                echo "[ERROR] Invalid option."
+                pause_menu
+                ;;
+        esac
+    done
+}
+
+main_menu

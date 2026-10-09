@@ -1,0 +1,15 @@
+---
+all:
+  children:
+    proxmox_hosts:
+      vars:
+        ansible_user: root
+        ansible_ssh_private_key_file: /home/example-user/.ssh/proxmox_host_inventory
+        ansible_python_interpreter: /usr/bin/python3
+
+      hosts:
+        "proxmox-node-01":
+          ansible_host: "192.0.2.10"
+
+        "proxmox-node-02":
+          ansible_host: "192.0.2.11"
